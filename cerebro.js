@@ -9,25 +9,19 @@ var selecionado = null;     // ID do registro selecionado
 
 // -----------------------------------------------------------------------
 // Parseia o texto CSV/TXT em array de objetos
-// Formato esperado: cada linha = registro
-// Campos: ID, Nome, Email, Telefone (separador = vírgula ou ; )
 // -----------------------------------------------------------------------
 function parseTexto(texto){
     var linhas = texto.split(/\r?\n/);
     var resultado = [];
-    var campos = ["id","nome","email","telefone"];
     for(var i=0;i<linhas.length;i++){
         var linha = linhas[i].trim();
         if(linha === "") continue;
-        // Suporta separador , ou ;
         var sep = linha.indexOf(",") !== -1 ? "," : (linha.indexOf(";") !== -1 ? ";" : undefined);
         if(sep === undefined){
-            // Se não tem separador, ignora ou trata como linha única
             continue;
         }
         var partes = linha.split(sep);
-        if(partes.length < 4) continue; // precisa de pelo menos 4 campos
-        // Trata campos: remove aspas se houver
+        if(partes.length < 4) continue;
         for(var j=0;j<partes.length;j++){
             partes[j] = partes[j].trim().replace(/^"(.*)"$/, "$1");
         }
@@ -37,7 +31,6 @@ function parseTexto(texto){
             email: partes[2],
             telefone: partes[3]
         };
-        // Campos extras (se houver mais que 4) ficam em "extra"
         if(partes.length > 4){
             registro.extra = partes.slice(4).join(sep);
         }
@@ -47,17 +40,15 @@ function parseTexto(texto){
 }
 
 // -----------------------------------------------------------------------
-// Converte registros para texto CSV/TXT
+// Converte registros para formato CSV ou TXT
 // -----------------------------------------------------------------------
 function registrosParaTexto(regs, formato){
-    formato = formato || "txt";
     var linhas = [];
     for(var i=0;i<regs.length;i++){
         var r = regs[i];
         if(formato === "csv"){
             linhas.push('"' + r.id + '","' + r.nome.replace(/"/g,'""') + '","' + r.email.replace(/"/g,'""') + '","' + r.telefone.replace(/"/g,'""') + '"');
         } else {
-            // TXT: separador vírgula
             linhas.push(r.id + "," + r.nome + "," + r.email + "," + r.telefone);
         }
     }
@@ -67,17 +58,16 @@ function registrosParaTexto(regs, formato){
 // -----------------------------------------------------------------------
 // DOM references
 // -----------------------------------------------------------------------
-var fileInput      = document.getElementById("fileInput");
-var dadosTexto     = document.getElementById("dadosTexto");
-
-var campoBusca     = document.getElementById("campoBusca");
-var campoOrdenar   = document.getElementById("campoOrdenar");
-var formatoExportar= document.getElementById("formatoExportar");
-var resultadoDiv   = document.getElementById("resultado");
+var fileInput        = document.getElementById("fileInput");
+var dadosTexto       = document.getElementById("dadosTexto");
+var campoBusca       = document.getElementById("campoBusca");
+var campoOrdenar     = document.getElementById("campoOrdenar");
+var formatoExportar  = document.getElementById("formatoExportar");
+var resultadoDiv     = document.getElementById("resultado");
 var resultadoContent = document.getElementById("resultadoContent");
-var tabela         = document.getElementById("tabela");
-var tabelaBody     = document.getElementById("tabelaBody");
-var mensagemDiv    = document.getElementById("mensagem");
+var tabela           = document.getElementById("tabela");
+var tabelaBody       = document.getElementById("tabelaBody");
+var mensagemDiv      = document.getElementById("mensagem");
 
 // -----------------------------------------------------------------------
 // Funções auxiliares para mensagens
@@ -140,43 +130,72 @@ fileInput.addEventListener("change", function(){
 });
 
 // -----------------------------------------------------------------------
-// Salvar em memória (download do arquivo)
+// Função para Salvar com o mesmo nome e perguntar se deseja substituir
 // -----------------------------------------------------------------------
-function salvarComoDownload(texto, nomeArquivo){
-    var blob = new Blob([texto], {type: "text/plain;charset=utf-8"});
+async function salvarComMensagemSubstituir(texto, nomeArquivoPadrao, extensao){
+    // Se o navegador suportar a API moderna, ele abre a janela nativa do OS
+    // que já lista o arquivo existente com o mesmo nome e avisa/pergunta se quer substituir.
+    if (window.showSaveFilePicker) {
+        try {
+            var mimeType = extensao === "csv" ? "text/csv" : "text/plain";
+            var opcoes = {
+                suggestedName: nomeArquivoPadrao,
+                types: [{
+                    description: "Arquivo " + extensao.toUpperCase(),
+                    accept: {}
+                }]
+            };
+            opcoes.types[0].accept[mimeType] = ["." + extensao];
+
+            var handle = await window.showSaveFilePicker(opcoes);
+            var writable = await handle.createWritable();
+            await writable.write(texto);
+            await writable.close();
+            mostrarMensagem("Arquivo salvo com sucesso!", "sucesso");
+            return;
+        } catch (err) {
+            if (err.name !== "AbortError") {
+                console.error(err);
+                mostrarMensagem("Erro ao salvar o arquivo.", "erro");
+            }
+            return;
+        }
+    }
+    
+    // Fallback padrão de download caso o navegador bloqueie a API
+    var blob = new Blob([texto], {type: extensao === "csv" ? "text/csv;charset=utf-8" : "text/plain;charset=utf-8"});
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
     a.href = url;
-    a.download = nomeArquivo || "registros.txt";
+    a.download = nomeArquivoPadrao;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    mostrarMensagem("Arquivo salvo com sucesso.", "sucesso");
 }
 
-// Botão salvar (download)
-document.getElementById("btSalvarMemoria").addEventListener("click", function(){
-    if(registros.length === 0){
-        mostrarMensagem("Nenhum registro para salvar. Carregue ou informe dados primeiro.", "erro");
-        return;
-    }
-    var texto = registrosParaTexto(registros, formatoExportar.value);
-    var nome = "registros_" + new Date().toISOString().slice(0,10) + ".txt";
-    salvarComoDownload(texto, nome);
-    mostrarMensagem("Arquivo " + nome + " baixado com " + registros.length + " registros.", "sucesso");
-});
-
-// Botão exportar
-document.getElementById("btExportar").addEventListener("click", function(){
+// Botão Exportar / Salvar
+document.getElementById("btExportar").addEventListener("click", async function(){
     if(registros.length === 0){
         mostrarMensagem("Nenhum registro para exportar.", "erro");
         return;
     }
-    var texto = registrosParaTexto(registros, formatoExportar.value);
-    var ext = formatoExportar.value === "csv" ? "csv" : "csv";
-    var nome = "registros_export." + ext;
-    salvarComoDownload(texto, nome);
-    mostrarMensagem("Exportado " + registros.length + " registros para " + nome + ".", "sucesso");
+    var formato = formatoExportar ? formatoExportar.value.toLowerCase() : "csv";
+    var texto = registrosParaTexto(registros, formato);
+    var nome = "registros." + formato; // Mantém o mesmo nome padrão fixo
+    await salvarComMensagemSubstituir(texto, nome, formato);
+});
+
+// Botão Salvar (memoria / txt)
+document.getElementById("btSalvarMemoria").addEventListener("click", async function(){
+    if(registros.length === 0){
+        mostrarMensagem("Nenhum registro para salvar. Carregue ou informe dados primeiro.", "erro");
+        return;
+    }
+    var texto = registrosParaTexto(registros, "txt");
+    var nome = "registros.txt"; // Mantém o mesmo nome padrão fixo
+    await salvarComMensagemSubstituir(texto, nome, "txt");
 });
 
 // -----------------------------------------------------------------------
@@ -192,8 +211,7 @@ function listarTodos(){
     var corpo = "";
     for(var i=0;i<registros.length;i++){
         var r = registros[i];
-        var selectedClass = (r.id == selecionado) ? "linha" : "";
-        corpo += "<tr class='" + selectedClass + "'>" +
+        corpo += "<tr>" +
             "<td>" + (i+1) + "</td>" +
             "<td>" + escaparHTML(r.id) + "</td>" +
             "<td>" + escaparHTML(r.nome) + "</td>" +
@@ -205,7 +223,6 @@ function listarTodos(){
     tabelaBody.innerHTML = corpo;
     resultadoContent.innerHTML = html + "<table id='tabela'><thead><tr><th>#</th><th>ID</th><th>Nome</th><th>Email</th><th>Telefone</th><th>Ações</th></tr></thead><tbody>" + corpo + "</tbody></table>";
     tabela.style.display = "table";
-    // Expõe função de seleção global para os botões inline
     window._sel = function(id){
         selecionado = id;
         listarTodos();
@@ -213,7 +230,6 @@ function listarTodos(){
     };
 }
 
-// Botão listar
 document.getElementById("btListar").addEventListener("click", listarTodos);
 
 // -----------------------------------------------------------------------
@@ -243,8 +259,7 @@ function buscar(){
     var corpo = "";
     for(var j=0;j<resultados.length;j++){
         var r = resultados[j];
-        var selectedClass = (r.id == selecionado) ? "linha" : "";
-        corpo += "<tr class='" + selectedClass + "'>" +
+        corpo += "<tr>" +
             "<td>" + (j+1) + "</td>" +
             "<td>" + escaparHTML(r.id) + "</td>" +
             "<td>" + escaparHTML(r.nome) + "</td>" +
@@ -277,7 +292,6 @@ function ordenarLista(){
     }
     var nomesCampos = ["id","nome","email","telefone"];
     var nomeCampo = nomesCampos[campo];
-    // Ordena por ordem natural (string)
     registros.sort(function(a,b){
         var va = (a[nomeCampo] || "").toString().toLowerCase();
         var vb = (b[nomeCampo] || "").toString().toLowerCase();
@@ -334,7 +348,7 @@ document.getElementById("btLimpar").addEventListener("click", function(){
 });
 
 // -----------------------------------------------------------------------
-// Atualiza o resultado com a lista atual (sem busca)
+// Atualiza o resultado com a lista atual
 // -----------------------------------------------------------------------
 function atualizarResultado(){
     if(registros.length === 0){
@@ -353,7 +367,6 @@ dadosTexto.addEventListener("blur", function(){
     if(texto === "") return;
     var parsed = parseTexto(texto);
     if(parsed.length > 0 && parsed.length !== registros.length){
-        // Só atualiza se o texto mudou e gerou registros diferentes
         registros = parsed;
         selecionado = null;
         mostrarMensagem("Carregados " + registros.length + " registros do textarea.", "sucesso");
@@ -361,30 +374,8 @@ dadosTexto.addEventListener("blur", function(){
     }
 });
 
-// Botão para carregar do textarea explicitamente
-var btFromTexto = document.createElement("button");
-btFromTexto.textContent = "Carregar do textarea";
-btFromTexto.style.marginLeft = "5px";
-btFromTexto.addEventListener("click", function(){
-    var texto = dadosTexto.value.trim();
-    if(texto === ""){
-        mostrarMensagem("Informe dados no textarea antes de carregar.", "erro");
-        return;
-    }
-    var parsed = parseTexto(texto);
-    if(parsed.length === 0){
-        mostrarMensagem("Nenhum registro válido encontrado. Verifique o formato (CSV com pelo menos 4 campos por linha).", "erro");
-        return;
-    }
-    registros = parsed;
-    selecionado = null;
-    mostrarMensagem("Carregados " + registros.length + " registros do textarea.", "sucesso");
-    atualizarResultado();
-});
-document.getElementById("btCarregar").parentNode.insertBefore(btFromTexto, document.getElementById("btCarregar").nextSibling);
-
 // -----------------------------------------------------------------------
-// Helper: escapar HTML para exibir conteúdo de forma segura
+// Helper: escapar HTML
 // -----------------------------------------------------------------------
 function escaparHTML(str){
     if(str === null || str === undefined) return "";
@@ -397,11 +388,10 @@ function escaparHTML(str){
 }
 
 // -----------------------------------------------------------------------
-// Inicialização: se houver um exemplo pré-definido, carrega
+// Inicialização
 // -----------------------------------------------------------------------
-var exemplo = "1,Ana Silva,ana@email.com,11999999999\n2,Bruno Costa,bruno@email.com,11888888888\n3,Carla Mendes,carla@email.com,11777777777\n4,Danilo Oliveira,danilo@email.com,11666666666\n5,Eva Rodrigues,eva@email.com,11555555555";
+var exemplo = "1,Ana Silva,ana@email.com,11 99999-9999\n2,Bruno Costa,bruno@email.com,11 88888-8888\n3,Carla Mendes,carla@email.com,11 77777-7777\n4,Danilo Oliveira,danilo@email.com,11 66666-6666\n5,Eva Rodrigues,eva@email.com,11 55555-5555";
 dadosTexto.value = exemplo;
-// Não carrega automaticamente; o aluno deve clicar em "Carregar do textarea"
 
 // Exporta para uso externo
 window.registrosApp = {
@@ -409,5 +399,6 @@ window.registrosApp = {
     setRegistros: function(r){ registros = r; },
     getSelecionado: function(){ return selecionado; }
 };
+
 })();
 //feito por DANIEL DA SILVA LIMA, EU FIZ SOZINNHO.//
