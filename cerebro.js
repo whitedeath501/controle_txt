@@ -409,6 +409,36 @@ window.registrosApp = {
     setRegistros: function(r){ registros = r; },
     getSelecionado: function(){ return selecionado; }
 };
+    let arquivoSalvo = null; // Guarda o arquivo na memória
+
+async function baixarCSV() {
+  const textoCSV = "Nome;Idade\nJoão;30\nMaria;25";
+
+  if (arquivoSalvo) {
+    if (confirm("Deseja SUBSTITUIR o arquivo anterior?")) {
+      const gravar = await arquivoSalvo.createWritable();
+      await gravar.write(textoCSV);
+      await gravar.close();
+      alert("Arquivo atualizado!");
+      return; // Para o código aqui
+    }
+  }
+
+
+  try {
+    arquivoSalvo = await window.showSaveFilePicker({
+      suggestedName: 'dados.csv',
+      types: [{ accept: { 'text/csv': ['.csv'] } }]
+    });
+
+    const gravar = await arquivoSalvo.createWritable();
+    await gravar.write(textoCSV);
+    await gravar.close();
+    alert("Arquivo criado!");
+  } catch (erro) {
+    console.log("Download cancelado.");
+  }
+}
 
 })();
 //feito por DANIEL DA SILVA LIMA, EU FIZ SOZINNHO.//
